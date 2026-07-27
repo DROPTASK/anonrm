@@ -2,13 +2,6 @@ import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { censorMessage } from '../utils/censor';
 
-// --- Types ---
-interface ProfileStats {
-  confessions: number;
-  followers: number;
-  following: number;
-}
-
 interface UserConfession {
   id: string;
   text: string;
