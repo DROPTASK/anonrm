@@ -1,5 +1,4 @@
-/* Import a sleek, modern font similar to Instagram/Twitter */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -7,30 +6,31 @@
 
 @layer base {
   html, body {
-    @apply m-0 p-0 w-full bg-gray-50 text-gray-900 antialiased;
+    @apply bg-white text-zinc-900 antialiased selection:bg-primary selection:text-white m-0 p-0;
     font-family: 'Inter', system-ui, sans-serif;
-    
-    /* Makes the app feel native on mobile by removing the blue tap highlight */
     -webkit-tap-highlight-color: transparent;
-    
-    /* Prevents the whole page from bouncing when scrolling past the top/bottom */
     overscroll-behavior-y: none;
   }
 
-  /* Deep dark mode for that sleek Telegram/Discord aesthetic */
+  /* Deep, bold dark mode */
   @media (prefers-color-scheme: dark) {
     html, body {
-      @apply bg-gray-950 text-white;
+      @apply bg-[#09090b] text-zinc-50;
     }
   }
 
   #root {
     @apply min-h-[100dvh] w-full flex flex-col;
   }
+
+  /* Bold, clean headings */
+  h1, h2, h3, h4 {
+    @apply tracking-tight font-bold;
+  }
 }
 
 @layer utilities {
-  /* Hides scrollbars but allows scrolling (Great for your DMs and Feed) */
+  /* Hide scrollbar for feeds and DMs, but keep functionality */
   .no-scrollbar::-webkit-scrollbar {
     display: none;
   }
@@ -39,36 +39,12 @@
     scrollbar-width: none;
   }
 
-  /* Glassmorphism effect for your bottom mobile nav or headers */
-  .glass {
-    @apply bg-white/70 dark:bg-gray-900/80 backdrop-blur-md border-gray-200 dark:border-gray-800;
+  /* Sharp, minimalist glass effect for headers/nav */
+  .glass-header {
+    @apply bg-white/80 dark:bg-[#09090b]/80 backdrop-blur-lg border-b border-zinc-200 dark:border-zinc-800;
   }
-}
-
-/* --- Custom App Animations --- */
-
-/* Smooth pop-in for new confessions in the feed */
-@keyframes fadeInUp {
-  from {
-    opacity: 0;
-    transform: translateY(12px);
+  
+  .glass-nav {
+    @apply bg-white/80 dark:bg-[#09090b]/80 backdrop-blur-lg border-t border-zinc-200 dark:border-zinc-800;
   }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.animate-fade-in-up {
-  animation: fadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-}
-
-/* Subtle pulse for your loading skeletons */
-@keyframes softPulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
-}
-
-.animate-soft-pulse {
-  animation: softPulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }

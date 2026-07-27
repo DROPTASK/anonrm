@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { censorText } from '../utils/censor';
+import { censorMessage } from '../utils/censor';
 
 // Define the shape of our joined data
 export interface ConfessionData {
@@ -84,7 +84,7 @@ export default function ConfessionCard({ confession }: Props) {
       {/* Body: Censored Text */}
       <div className="mb-4">
         <p className="text-gray-800 dark:text-gray-200 whitespace-pre-wrap text-lg">
-          {censorText(confession.content)}
+          {censorMessage(confession.content)}
         </p>
       </div>
 

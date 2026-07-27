@@ -1,86 +1,110 @@
-import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
+import { useState } from 'react';
+import { useParams, Link } from 'react-router-dom';
 
 export default function Ask() {
   const { username } = useParams<{ username: string }>();
-  const [targetUserId, setTargetUserId] = useState<string | null>(null);
   const [message, setMessage] = useState('');
-  const [status, setStatus] = useState<'idle' | 'submitting' | 'success' | 'error'>('idle');
+  const [isSending, setIsSending] = useState(false);
+  const [isSent, setIsSent] = useState(false);
 
-  useEffect(() => {
-    const fetchUser = async () => {
-      const { data } = await supabase.from('users').select('id').eq('username', username).single();
-      if (data) setTargetUserId(data.id);
-    };
-    fetchUser();
-  }, [username]);
-
-  const handleSubmit = async () => {
-    if (!message.trim() || !targetUserId) return;
-    setStatus('submitting');
-
-    // Insert into messages with null sender_id (anonymous) and null group_id (DM)
-    const { error } = await supabase.from('messages').insert({
-      receiver_id: targetUserId,
-      content: message,
-    });
-
-    if (error) {
-      console.error(error);
-      setStatus('error');
-    } else {
-      setStatus('success');
-      setMessage('');
-    }
+  // Mock send function
+  const handleSend = () => {
+    setIsSending(true);
+    // Simulate network request
+    setTimeout(() => {
+      setIsSending(false);
+      setIsSent(true);
+    }, 1200);
   };
 
-  if (!targetUserId && status !== 'error') {
-    return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
-  }
+  const handleReset = () => {
+    setMessage('');
+    setIsSent(false);
+  };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center p-4">
-      <div className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-md text-center">
+    <div className="w-full min-h-screen flex flex-col items-center justify-center p-4 relative">
+      {/* Dynamic Background Element */}
+      <div className="absolute top-0 w-full h-64 bg-gradient-to-b from-primary/10 to-transparent pointer-events-none"></div>
+
+      <div className="w-full max-w-sm animate-slide-up z-10">
         
-        {status === 'success' ? (
-          <div className="py-8">
-            <div className="w-16 h-16 bg-green-100 text-green-500 rounded-full flex items-center justify-center mx-auto mb-4">
-              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+        {/* Profile Header */}
+        <div className="flex flex-col items-center mb-8">
+          <div className="w-20 h-20 bg-zinc-200 dark:bg-zinc-800 rounded-full flex items-center justify-center mb-4 text-3xl font-black text-zinc-400">
+            {username?.charAt(0).toUpperCase()}
+          </div>
+          <h1 className="text-2xl font-bold tracking-tight text-center">
+            @{username}
+          </h1>
+          <div className="flex items-center gap-1.5 mt-2 text-sm font-semibold text-zinc-500">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+            </svg>
+            100% Anonymous
+          </div>
+        </div>
+
+        {/* Form or Success State */}
+        {!isSent ? (
+          <div className="bg-white dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-800 rounded-3xl p-4 shadow-xl">
+            <textarea
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              placeholder="Send me an anonymous message..."
+              className="w-full h-32 bg-transparent text-lg resize-none outline-none placeholder:text-zinc-400 dark:text-zinc-50 p-2"
+              maxLength={300}
+            />
+            <div className="flex items-center justify-between mt-4 border-t border-zinc-100 dark:border-zinc-800/50 pt-4">
+              <span className="text-xs font-semibold text-zinc-400 pl-2">
+                {message.length}/300
+              </span>
+              <button
+                onClick={handleSend}
+                disabled={!message.trim() || isSending}
+                className="bg-primary hover:bg-primaryHover disabled:opacity-50 disabled:bg-primary text-white font-bold py-3 px-8 rounded-full flex items-center justify-center gap-2 transition-all min-w-[120px]"
+              >
+                {isSending ? (
+                  <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                ) : (
+                  'Send'
+                )}
+              </button>
             </div>
-            <h2 className="text-2xl font-bold text-gray-800">Sent!</h2>
-            <p className="text-gray-500 mt-2">Your anonymous message is on its way.</p>
-            <button 
-              onClick={() => setStatus('idle')}
-              className="mt-6 text-purple-600 font-semibold hover:underline"
+          </div>
+        ) : (
+          <div className="bg-white dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-800 rounded-3xl p-8 shadow-xl flex flex-col items-center text-center animate-fade-in">
+            <div className="w-16 h-16 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded-full flex items-center justify-center mb-4">
+              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <h2 className="text-xl font-bold mb-2">Message Sent!</h2>
+            <p className="text-zinc-500 text-sm mb-6 font-medium">
+              Your secret is safe. They won't know who sent this.
+            </p>
+            <button
+              onClick={handleReset}
+              className="text-primary font-bold text-sm hover:underline"
             >
               Send another message
             </button>
           </div>
-        ) : (
-          <>
-            <div className="w-20 h-20 mx-auto bg-gray-100 rounded-full mb-4 flex items-center justify-center">
-               <img src={`https://api.dicebear.com/7.x/identicon/svg?seed=${username}`} alt={username} className="w-full h-full rounded-full" />
-            </div>
-            <h1 className="text-xl font-bold text-gray-900 mb-2">Send an anonymous message to @{username}</h1>
-            <p className="text-gray-500 text-sm mb-6">They won't know who sent it.</p>
-            
-            <textarea
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              placeholder="Type your message here..."
-              className="w-full h-32 p-4 rounded-xl border border-gray-200 bg-gray-50 text-gray-900 focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none mb-4"
-            />
-            
-            <button
-              onClick={handleSubmit}
-              disabled={status === 'submitting' || !message.trim()}
-              className="w-full bg-black text-white font-bold py-4 rounded-xl shadow-lg transition-transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
-            >
-              {status === 'submitting' ? 'Sending...' : 'Send Message'}
-            </button>
-          </>
         )}
+
+        {/* Growth Loop Footer */}
+        <div className="mt-12 text-center flex flex-col items-center animate-fade-in">
+          <p className="text-xs font-semibold text-zinc-500 mb-3">Want your own anonymous messages?</p>
+          <Link 
+            to="/login"
+            className="bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 font-bold py-3 px-6 rounded-full text-sm transition-transform active:scale-95"
+          >
+            Get your own ConfessApp link
+          </Link>
+        </div>
         
       </div>
     </div>

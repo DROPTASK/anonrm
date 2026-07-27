@@ -1,46 +1,23 @@
-import { supabase } from '../lib/supabase'; // Adjust path based on your project structure
+// src/utils/censor.ts
 
-// In-memory cache for blocked words
-let blockedWordsCache: string[] = [];
-let isFetched = false;
+// In production, fetch this array from your Supabase 'blocked_words' table on app load
+const BLOCKED_WORDS = ["fuck", "shit", "bitch", "asshole", "damn"]; 
 
-/**
- * Fetches blocked words from Supabase and caches them in memory.
- * Call this once during app initialization.
- */
-export const fetchBlockedWords = async (): Promise<void> => {
-  if (isFetched) return;
-
-  const { data, error } = await supabase
-    .from('blocked_words')
-    .select('word');
-
-  if (error) {
-    console.error('Error fetching blocked words:', error.message);
-    return;
-  }
-
-  if (data) {
-    blockedWordsCache = data.map(item => item.word.toLowerCase());
-    isFetched = true;
-  }
-};
-
-/**
- * Censors a given string by checking against the cached blocked words.
- * Replaces the 2nd, 4th, 6th... letters of matched words with an asterisk (*).
- */
-export const censorText = (text: string): string => {
-  if (!blockedWordsCache.length) return text;
-
-  // Escape words for regex and join them into an OR capture group
-  const escapedWords = blockedWordsCache.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-  const regex = new RegExp(`\\b(${escapedWords.join('|')})\\b`, 'gi');
-
-  return text.replace(regex, (match) => {
-    // Arrays are 0-indexed. Odd indices map to the 2nd (1), 4th (3), 6th (5) letters.
-    return match.split('').map((char, index) => {
-      return index % 2 === 1 ? '*' : char;
-    }).join('');
+export const censorMessage = (text: string): string => {
+  if (!text) return "";
+  
+  let censoredText = text;
+  
+  BLOCKED_WORDS.forEach(word => {
+    const regex = new RegExp(`\\b${word}\\b`, 'gi');
+    censoredText = censoredText.replace(regex, (match) => {
+      // Censor 2nd, 4th, 6th, etc. letters (index 1, 3, 5)
+      return match.split('').map((char, index) => {
+        // Index is 0-based. So 1 is 2nd letter, 3 is 4th letter.
+        return (index % 2 !== 0) ? '*' : char;
+      }).join('');
+    });
   });
+
+  return censoredText;
 };

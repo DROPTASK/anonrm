@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { censorText } from '../utils/censor';
+import { censorMessage } from '../utils/censor';
 
 export interface CommentData {
   id: string;
@@ -48,7 +48,7 @@ export default function CommentItem({ comment, allComments, onReply }: CommentIt
               {comment.users.username}
             </h4>
             <p className="text-gray-800 dark:text-gray-200 text-sm mt-1 whitespace-pre-wrap">
-              {censorText(comment.content)}
+              {censorMessage(comment.content)}
             </p>
           </div>
           
