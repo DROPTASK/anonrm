@@ -1,0 +1,74 @@
+/* Import a sleek, modern font similar to Instagram/Twitter */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body {
+    @apply m-0 p-0 w-full bg-gray-50 text-gray-900 antialiased;
+    font-family: 'Inter', system-ui, sans-serif;
+    
+    /* Makes the app feel native on mobile by removing the blue tap highlight */
+    -webkit-tap-highlight-color: transparent;
+    
+    /* Prevents the whole page from bouncing when scrolling past the top/bottom */
+    overscroll-behavior-y: none;
+  }
+
+  /* Deep dark mode for that sleek Telegram/Discord aesthetic */
+  @media (prefers-color-scheme: dark) {
+    html, body {
+      @apply bg-gray-950 text-white;
+    }
+  }
+
+  #root {
+    @apply min-h-[100dvh] w-full flex flex-col;
+  }
+}
+
+@layer utilities {
+  /* Hides scrollbars but allows scrolling (Great for your DMs and Feed) */
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  /* Glassmorphism effect for your bottom mobile nav or headers */
+  .glass {
+    @apply bg-white/70 dark:bg-gray-900/80 backdrop-blur-md border-gray-200 dark:border-gray-800;
+  }
+}
+
+/* --- Custom App Animations --- */
+
+/* Smooth pop-in for new confessions in the feed */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Subtle pulse for your loading skeletons */
+@keyframes softPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.animate-soft-pulse {
+  animation: softPulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
