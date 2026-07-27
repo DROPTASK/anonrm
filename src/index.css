@@ -1,47 +1,45 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
 @import "tailwindcss";
 
-@layer base {
-  html, body {
-    @apply bg-white text-zinc-900 antialiased m-0 p-0;
-    font-family: 'Inter', system-ui, sans-serif;
-    -webkit-tap-highlight-color: transparent;
-    overscroll-behavior-y: none;
-  }
-
-  /* Deep, bold dark mode */
-  @media (prefers-color-scheme: dark) {
-    html, body {
-      @apply bg-[#09090b] text-zinc-50;
-    }
-  }
-
-  #root {
-    @apply min-h-screen w-full flex flex-col;
-  }
-
-  /* Bold, clean headings */
-  h1, h2, h3, h4 {
-    @apply tracking-tight font-bold;
-  }
+/* Base HTML & Body Settings */
+html, body {
+  @apply antialiased text-gray-900 bg-gray-50;
+  -webkit-tap-highlight-color: transparent;
 }
 
+.dark body {
+  @apply text-gray-100 bg-[#0a0a0a];
+}
+
+/* 
+  Custom Utilities 
+*/
 @layer utilities {
-  /* Hide scrollbar for feeds and DMs, but keep functionality */
-  .no-scrollbar::-webkit-scrollbar {
-    display: none;
+  /* Hides the scrollbar visually but allows scrolling */
+  .scrollbar-hide {
+    -ms-overflow-style: none; /* IE and Edge */
+    scrollbar-width: none; /* Firefox */
   }
-  .no-scrollbar {
-    -ms-overflow-style: none;
-    scrollbar-width: none;
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none; /* Chrome, Safari and Opera */
   }
 
-  /* Sharp, minimalist glass effect for headers/nav */
-  .glass-header {
-    @apply bg-white/80 dark:bg-[#09090b]/80 backdrop-blur-lg border-b border-zinc-200 dark:border-zinc-800;
+  /* Safe padding for iOS mobile devices with home bars */
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom);
   }
-  
-  .glass-nav {
-    @apply bg-white/80 dark:bg-[#09090b]/80 backdrop-blur-lg border-t border-zinc-200 dark:border-zinc-800;
+  .pt-safe {
+    padding-top: env(safe-area-inset-top);
+  }
+
+  /* Subtle background pattern used in empty states and banners */
+  .bg-pattern {
+    background-image: radial-gradient(
+      var(--pattern-color, #e5e7eb) 1px, 
+      transparent 1px
+    );
+    background-size: 24px 24px;
+  }
+  .dark .bg-pattern {
+    --pattern-color: #1f2937;
   }
 }

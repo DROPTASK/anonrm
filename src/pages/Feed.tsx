@@ -1,264 +1,466 @@
-// src/pages/Feed.tsx
-import { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { censorMessage } from '../utils/censor';
-import NewConfessionModal from '../components/NewConfessionModal';
+/**
+ * @file src/pages/Feed.tsx
+ * @description The main algorithmic and chronological feed for AnonRM.
+ * Implements infinite scrolling, DOM virtualization for performance, robust error boundaries,
+ * and direct integration with Supabase using React Query.
+ * 
+ * Features:
+ * - Variable-height virtualized lists (@tanstack/react-virtual)
+ * - Intersection Observer for seamless pagination
+ * - Framer Motion layout animations and gestures
+ * - Dark/Light mode glassmorphic UI
+ * - Multiple sorting algorithms (Trending, Latest, Top)
+ */
 
-// --- Types ---
-interface Comment {
-  id: string;
-  author: string;
-  text: string;
-  time: string;
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
+import { useWindowVirtualizer, VirtualItem } from '@tanstack/react-virtual';
+import { useInView } from 'react-intersection-observer';
+import toast from 'react-hot-toast';
+
+// Supabase & Types
+import { supabase, AppError, parseSupabaseError } from '../../lib/supabase';
+import type { ConfessionWithRelations, Database, VoteType } from '../../lib/types';
+
+// Components
+import { ConfessionCard, ConfessionCardSkeleton } from '../components/ConfessionCard';
+
+// ============================================================================
+// TYPES & ENUMS
+// ============================================================================
+
+type FeedSortType = 'latest' | 'trending' | 'top' | 'pinned';
+
+interface FeedPageProps {
+  currentUserId?: string; // Passed down from auth provider
 }
 
-interface Confession {
-  id: string;
-  author: string;
-  text: string;
-  time: string;
-  upvotes: number;
-  downvotes: number;
-  userVote: 'up' | 'down' | null;
-  comments: Comment[];
+interface FetchFeedParams {
+  pageParam?: number;
+  sortType: FeedSortType;
+  userId?: string;
+  limit?: number;
 }
 
-// --- Skeleton Loader Component ---
-const FeedSkeleton = () => (
-  <div className="flex flex-col w-full animate-pulse">
-    {[1, 2, 3].map((i) => (
-      <div key={i} className="p-4 border-b border-zinc-200 dark:border-zinc-800">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="w-10 h-10 bg-zinc-200 dark:bg-zinc-800 rounded-full"></div>
-          <div className="flex flex-col gap-2">
-            <div className="w-24 h-3 bg-zinc-200 dark:bg-zinc-800 rounded"></div>
-            <div className="w-16 h-2 bg-zinc-100 dark:bg-zinc-900 rounded"></div>
-          </div>
-        </div>
-        <div className="w-full h-4 bg-zinc-200 dark:bg-zinc-800 rounded mb-2"></div>
-        <div className="w-3/4 h-4 bg-zinc-200 dark:bg-zinc-800 rounded mb-6"></div>
-        <div className="flex gap-6">
-          <div className="w-16 h-6 bg-zinc-200 dark:bg-zinc-800 rounded"></div>
-          <div className="w-16 h-6 bg-zinc-200 dark:bg-zinc-800 rounded"></div>
-        </div>
-      </div>
-    ))}
-  </div>
-);
+// ============================================================================
+// ICONS (Raw SVG to avoid heavy dependencies)
+// ============================================================================
 
-export default function Feed() {
-  const navigate = useNavigate();
-  const [isLoading, setIsLoading] = useState(true);
-  const [posts, setPosts] = useState<Confession[]>([]);
-  const [composeText, setComposeText] = useState("");
-  const [activeCommentPost, setActiveCommentPost] = useState<string | null>(null);
-  const [commentText, setCommentText] = useState("");
-  const [isModalOpen, setIsModalOpen] = useState(false);
+const Icons = {
+  Trending: (props: React.SVGProps<SVGSVGElement>) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <polyline points="23 6 13.5 15.5 8.5 10.5 1 18" />
+      <polyline points="17 6 23 6 23 12" />
+    </svg>
+  ),
+  Latest: (props: React.SVGProps<SVGSVGElement>) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <circle cx="12" cy="12" r="10" />
+      <polyline points="12 6 12 12 16 14" />
+    </svg>
+  ),
+  Top: (props: React.SVGProps<SVGSVGElement>) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+    </svg>
+  ),
+  Create: (props: React.SVGProps<SVGSVGElement>) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M12 5v14M5 12h14" />
+    </svg>
+  ),
+  Search: (props: React.SVGProps<SVGSVGElement>) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <circle cx="11" cy="11" r="8" />
+      <line x1="21" y1="21" x2="16.65" y2="16.65" />
+    </svg>
+  ),
+  Filter: (props: React.SVGProps<SVGSVGElement>) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+    </svg>
+  )
+};
 
-  const handleConfessionSuccess = () => {
-    // Refresh feed - in production, refetch from Supabase
-    setIsLoading(true);
-    setTimeout(() => setIsLoading(false), 500);
-  };
+// ============================================================================
+// API SERVICE LOGIC
+// ============================================================================
 
-  // Simulate network fetch
-  useEffect(() => {
-    setTimeout(() => {
-      setPosts([
-        {
-          id: "conf_1",
-          author: "anonymous_dev",
-          text: "I act like a senior dev but I still google 'how to center a div' every time. Don't tell my boss. What a shit show.",
-          time: "2h ago",
-          upvotes: 342,
-          downvotes: 12,
-          userVote: null,
-          comments: [
-            { id: "c1", author: "frontend_god", text: "Flexbox is your friend.", time: "1h ago" },
-            { id: "c2", author: "backend_bro", text: "Bro same.", time: "45m ago" }
-          ]
-        },
-        {
-          id: "conf_2",
-          author: "gym_rat99",
-          text: "I only go to the gym so I can listen to Taylor Swift without my friends judging me.",
-          time: "5h ago",
-          upvotes: 1205,
-          downvotes: 45,
-          userVote: 'up',
-          comments: []
-        }
-      ]);
-      setIsLoading(false);
-    }, 1500);
-  }, []);
+/**
+ * Fetches confessions with relational data (author, group).
+ * Merges the current user's votes and saves manually since PostgREST
+ * doesn't support complex embedded filtered relations easily without RPCs.
+ */
+const fetchFeed = async ({ pageParam = 0, sortType, userId, limit = 15 }: FetchFeedParams): Promise<{
+  data: ConfessionWithRelations[];
+  nextPageToken: number | null;
+}> => {
+  try {
+    const from = pageParam * limit;
+    const to = from + limit - 1;
 
-  const handleVote = (postId: string, type: 'up' | 'down') => {
-    setPosts(currentPosts => currentPosts.map(post => {
-      if (post.id !== postId) return post;
-      
-      let newUpvotes = post.upvotes;
-      let newDownvotes = post.downvotes;
-      let newUserVote = type;
+    let query = supabase
+      .from('confessions')
+      .select(`
+        *,
+        author:profiles(id, username, avatar_url, is_verified),
+        group:groups(id, name, slug, avatar_url)
+      `);
 
-      // Remove existing vote
-      if (post.userVote === 'up') newUpvotes--;
-      if (post.userVote === 'down') newDownvotes--;
+    // Apply Sorting Algorithms
+    switch (sortType) {
+      case 'latest':
+        query = query.order('created_at', { ascending: false });
+        break;
+      case 'trending':
+        query = query.order('is_trending', { ascending: false })
+                     .order('upvotes_count', { ascending: false })
+                     .order('created_at', { ascending: false });
+        break;
+      case 'top':
+        // Calculate top by highest karma (upvotes - downvotes) implicitly via upvotes for simplicity here,
+        // In a strict prod environment, a database view or RPC should compute `score = upvotes - downvotes`
+        query = query.order('upvotes_count', { ascending: false });
+        break;
+      case 'pinned':
+        query = query.eq('is_pinned', true).order('created_at', { ascending: false });
+        break;
+    }
 
-      // Toggle off if clicking same vote again
-      if (post.userVote === type) {
-        newUserVote = null as any;
-      } else {
-        // Apply new vote
-        if (type === 'up') newUpvotes++;
-        if (type === 'down') newDownvotes++;
-      }
+    // Execute Pagination
+    const { data: confessionsData, error: confessionsError } = await query.range(from, to);
 
-      return { ...post, upvotes: newUpvotes, downvotes: newDownvotes, userVote: newUserVote };
-    }));
-  };
+    if (confessionsError) throw confessionsError;
 
-  const handleShare = (username: string, confId: string) => {
-    // In production, this uses Web Share API or copies to clipboard
-    const url = `${window.location.origin}/u/${username}/${confId}`;
-    navigator.clipboard.writeText(url);
-    alert("Link copied to clipboard!");
-  };
+    if (!confessionsData || confessionsData.length === 0) {
+      return { data: [], nextPageToken: null };
+    }
+
+    let enrichedData: ConfessionWithRelations[] = confessionsData as ConfessionWithRelations[];
+
+    // If user is logged in, fetch their specific interaction states (Votes, Bookmarks)
+    if (userId && enrichedData.length > 0) {
+      const confessionIds = enrichedData.map(c => c.id);
+
+      // Fetch User Votes
+      const { data: votesData } = await supabase
+        .from('votes')
+        .select('target_id, value')
+        .eq('user_id', userId)
+        .eq('target_type', 'confession')
+        .in('target_id', confessionIds);
+
+      // Fetch User Bookmarks (Saved)
+      const { data: savesData } = await supabase
+        .from('bookmarks')
+        .select('confession_id')
+        .eq('user_id', userId)
+        .in('confession_id', confessionIds);
+
+      // Map relational data back into the confession objects
+      const votesMap = new Map(votesData?.map(v => [v.target_id, v.value as VoteType]));
+      const savesSet = new Set(savesData?.map(s => s.confession_id));
+
+      enrichedData = enrichedData.map(confession => ({
+        ...confession,
+        user_vote: votesMap.get(confession.id) || null,
+        is_saved: savesSet.has(confession.id)
+      }));
+    }
+
+    return {
+      data: enrichedData,
+      nextPageToken: confessionsData.length === limit ? pageParam + 1 : null
+    };
+
+  } catch (error) {
+    throw parseSupabaseError(error);
+  }
+};
+
+// ============================================================================
+// UI COMPONENTS
+// ============================================================================
+
+/**
+ * Filter Tabs Component
+ * Uses Framer Motion for the sliding active indicator pill.
+ */
+const FilterTabs: React.FC<{
+  activeSort: FeedSortType;
+  setSort: (sort: FeedSortType) => void;
+}> = ({ activeSort, setSort }) => {
+  const tabs: { id: FeedSortType; label: string; icon: React.FC<any> }[] = [
+    { id: 'latest', label: 'Latest', icon: Icons.Latest },
+    { id: 'trending', label: 'Trending', icon: Icons.Trending },
+    { id: 'top', label: 'Top', icon: Icons.Top },
+  ];
 
   return (
-    <div className="w-full min-h-screen flex flex-col">
-      {/* Header */}
-      <header className="glass-header sticky top-0 z-40 px-4 py-4 flex items-center justify-between">
-        <h1 className="text-xl font-bold tracking-tight">ConfessApp</h1>
-        <Link to="/profile" className="w-8 h-8 rounded-full bg-zinc-200 dark:bg-zinc-800 overflow-hidden flex items-center justify-center font-bold text-zinc-500">
-          U
-        </Link>
-      </header>
-
-      {/* Compose */}
-      <div className="px-4 py-4 border-b border-zinc-200 dark:border-zinc-800">
-        <textarea
-          value={composeText}
-          onChange={(e) => setComposeText(e.target.value)}
-          placeholder="Confess something..."
-          className="w-full bg-transparent text-lg resize-none outline-none placeholder:text-zinc-500 dark:text-zinc-50 min-h-[60px]"
-          maxLength={300}
-        />
-        <div className="flex justify-between items-center mt-2">
-          <span className="text-xs text-zinc-500 font-medium">{composeText.length}/300</span>
-          <button 
-            disabled={!composeText.trim()}
-            className="bg-primary hover:bg-primaryHover disabled:opacity-50 text-white font-bold py-1.5 px-5 rounded-full text-sm transition-all"
+    <div className="flex items-center space-x-1 p-1 bg-gray-100/80 dark:bg-gray-800/80 backdrop-blur-md rounded-2xl w-full max-w-2xl mx-auto mb-6 sticky top-20 z-40 border border-gray-200 dark:border-gray-700/50">
+      {tabs.map((tab) => {
+        const isActive = activeSort === tab.id;
+        const Icon = tab.icon;
+        return (
+          <button
+            key={tab.id}
+            onClick={() => setSort(tab.id)}
+            className={`relative flex-1 flex items-center justify-center space-x-2 py-2.5 px-4 rounded-xl text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 z-10 ${
+              isActive ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-200/50 dark:hover:bg-gray-700/50'
+            }`}
+            aria-selected={isActive}
+            role="tab"
           >
-            Post
+            {isActive && (
+              <motion.div
+                layoutId="active-tab-indicator"
+                className="absolute inset-0 bg-white dark:bg-gray-900 rounded-xl shadow-sm border border-gray-200/50 dark:border-gray-700/50"
+                initial={false}
+                transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                style={{ zIndex: -1 }}
+              />
+            )}
+            <Icon className="w-4 h-4" />
+            <span>{tab.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+};
+
+/**
+ * Inline Create Post Widget
+ * Sits at the top of the feed to encourage interaction.
+ */
+const InlineComposer: React.FC = () => {
+  return (
+    <div 
+      className="w-full max-w-2xl mx-auto bg-white dark:bg-gray-900 rounded-3xl p-4 shadow-sm border border-gray-100 dark:border-gray-800 mb-6 flex items-center space-x-4 cursor-text group transition-shadow hover:shadow-md"
+      onClick={() => {
+        // In a real app, this would open the NewConfessionModal via context/zustand or route to /ask
+        toast('Create Modal opens here', { icon: '✍️' });
+      }}
+    >
+      <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center flex-shrink-0 text-white shadow-inner">
+        <Icons.Create className="w-5 h-5" />
+      </div>
+      <div className="flex-1 bg-gray-50 dark:bg-gray-800/50 rounded-2xl py-3 px-4 border border-gray-100 dark:border-gray-700/50 group-hover:border-indigo-200 dark:group-hover:border-indigo-500/30 transition-colors">
+        <p className="text-gray-500 dark:text-gray-400 text-[15px]">Confess something anonymously...</p>
+      </div>
+    </div>
+  );
+};
+
+/**
+ * Empty State Component
+ */
+const EmptyFeedState: React.FC<{ filter: string }> = ({ filter }) => (
+  <motion.div 
+    initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+    className="flex flex-col items-center justify-center py-20 px-4 text-center"
+  >
+    <div className="w-20 h-20 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mb-4">
+      <span className="text-3xl">📭</span>
+    </div>
+    <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">No Confessions Found</h3>
+    <p className="text-gray-500 dark:text-gray-400 max-w-sm">
+      There are no {filter} confessions to display right now. Be the first to break the silence!
+    </p>
+    <button className="mt-6 px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full font-medium transition-colors shadow-lg shadow-indigo-200 dark:shadow-none">
+      Post a Confession
+    </button>
+  </motion.div>
+);
+
+// ============================================================================
+// MAIN FEED COMPONENT
+// ============================================================================
+
+export const Feed: React.FC<FeedPageProps> = ({ currentUserId }) => {
+  const queryClient = useQueryClient();
+  const [activeSort, setActiveSort] = useState<FeedSortType>('trending');
+
+  // --- Data Fetching (React Query Infinite) ---
+  const {
+    data,
+    error,
+    fetchNextPage,
+    hasNextPage,
+    isFetching,
+    isFetchingNextPage,
+    status,
+    refetch
+  } = useInfiniteQuery({
+    queryKey: ['feed', activeSort, currentUserId],
+    queryFn: ({ pageParam }) => fetchFeed({ pageParam: pageParam as number, sortType: activeSort, userId: currentUserId }),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => lastPage.nextPageToken,
+    staleTime: 1000 * 60 * 2, // Cache for 2 minutes to prevent over-fetching on rapid unmounts
+  });
+
+  // Flatten the pages array from React Query into a single array of items
+  const flatData = React.useMemo(() => {
+    return data?.pages.flatMap(page => page.data) ?? [];
+  }, [data]);
+
+  // --- Intersection Observer for Infinite Scroll ---
+  const { ref: loadMoreRef, inView } = useInView({
+    rootMargin: '400px', // Trigger fetch 400px before reaching the end of the list
+  });
+
+  useEffect(() => {
+    if (inView && hasNextPage && !isFetchingNextPage) {
+      fetchNextPage();
+    }
+  }, [inView, hasNextPage, isFetchingNextPage, fetchNextPage]);
+
+  // --- Virtualization (DOM Performance) ---
+  // Calculates dynamic heights of items to prevent DOM bloat on massive feeds.
+  const parentRef = useRef<HTMLDivElement>(null);
+  
+  const virtualizer = useWindowVirtualizer({
+    count: flatData.length,
+    estimateSize: () => 250, // Average height of a ConfessionCard in px
+    overscan: 3, // Render 3 items outside viewport for smooth scrolling
+  });
+
+  // --- Event Handlers ---
+  const handleHideConfession = useCallback((confessionId: string) => {
+    // Optimistically remove from cache
+    queryClient.setQueryData(['feed', activeSort, currentUserId], (oldData: any) => {
+      if (!oldData) return oldData;
+      return {
+        ...oldData,
+        pages: oldData.pages.map((page: any) => ({
+          ...page,
+          data: page.data.filter((c: ConfessionWithRelations) => c.id !== confessionId)
+        }))
+      };
+    });
+    toast.success('Confession hidden from your feed.', { position: 'bottom-center' });
+  }, [queryClient, activeSort, currentUserId]);
+
+  const handleDeleteConfession = useCallback((confessionId: string) => {
+    handleHideConfession(confessionId); // Same cache removal logic applies
+  }, [handleHideConfession]);
+
+  // ============================================================================
+  // RENDER
+  // ============================================================================
+
+  if (status === 'error') {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[50vh] px-4">
+        <div className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-4 rounded-2xl flex items-center space-x-3 mb-4 max-w-md w-full border border-red-100 dark:border-red-800/50">
+          <span className="text-2xl">⚠️</span>
+          <div>
+            <h4 className="font-bold">Failed to load feed</h4>
+            <p className="text-sm opacity-90">{(error as Error).message || 'Check your connection.'}</p>
+          </div>
+        </div>
+        <button 
+          onClick={() => refetch()}
+          className="px-5 py-2.5 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-full font-medium shadow-sm hover:scale-105 transition-transform"
+        >
+          Try Again
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="w-full min-h-screen pb-24 pt-4 px-3 sm:px-0">
+      
+      {/* Top Header / Header Search actions (Mobile mostly) */}
+      <div className="flex items-center justify-between w-full max-w-2xl mx-auto mb-4 sm:hidden">
+        <h1 className="text-2xl font-extrabold tracking-tight text-gray-900 dark:text-white">AnonRM</h1>
+        <div className="flex space-x-2">
+          <button className="p-2 bg-gray-100 dark:bg-gray-800 rounded-full text-gray-600 dark:text-gray-300">
+            <Icons.Search className="w-5 h-5" />
+          </button>
+          <button className="p-2 bg-gray-100 dark:bg-gray-800 rounded-full text-gray-600 dark:text-gray-300">
+            <Icons.Filter className="w-5 h-5" />
           </button>
         </div>
       </div>
 
-      {/* Feed Content */}
-      <div className="flex flex-col pb-6">
-        {isLoading ? <FeedSkeleton /> : posts.map((post, index) => (
-          <article 
-            key={post.id} 
-            className="p-4 border-b border-zinc-200 dark:border-zinc-800 animate-slide-up bg-white dark:bg-[#09090b]"
-            style={{ animationDelay: `${index * 100}ms` }}
-          >
-            {/* Post Header */}
-            <div className="flex items-center justify-between mb-3">
-              <Link to={`/u/${post.author}`} className="flex items-center gap-2 group">
-                <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-primary to-purple-500 flex items-center justify-center text-white font-bold text-xs">
-                  {post.author.charAt(0).toUpperCase()}
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold group-hover:underline">@{post.author}</h3>
-                  <p className="text-xs text-zinc-500">{post.time}</p>
-                </div>
-              </Link>
-              <button onClick={() => navigate(`/u/${post.author}/${post.id}`)} className="text-zinc-400 hover:text-zinc-900 dark:hover:text-white">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h.01M12 12h.01M19 12h.01M6 12a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0z" /></svg>
-              </button>
-            </div>
+      <InlineComposer />
+      
+      <FilterTabs activeSort={activeSort} setSort={setActiveSort} />
 
-            {/* Post Body (Censored) */}
-            <p className="text-base font-medium leading-snug mb-4 break-words">
-              {censorMessage(post.text)}
-            </p>
-            
-            {/* Action Bar (Reddit + Insta style) */}
-            <div className="flex items-center gap-6 text-zinc-500 dark:text-zinc-400">
-              
-              {/* Upvote / Downvote */}
-              <div className="flex items-center bg-zinc-100 dark:bg-zinc-900 rounded-full">
-                <button onClick={() => handleVote(post.id, 'up')} className={`p-2 rounded-l-full hover:bg-zinc-200 dark:hover:bg-zinc-800 transition ${post.userVote === 'up' ? 'text-orange-500' : ''}`}>
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
-                </button>
-                <span className="text-sm font-bold px-2">{post.upvotes - post.downvotes}</span>
-                <button onClick={() => handleVote(post.id, 'down')} className={`p-2 rounded-r-full hover:bg-zinc-200 dark:hover:bg-zinc-800 transition ${post.userVote === 'down' ? 'text-indigo-500' : ''}`}>
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-                </button>
-              </div>
-              
-              {/* Comment Button */}
-              <button 
-                onClick={() => setActiveCommentPost(activeCommentPost === post.id ? null : post.id)}
-                className="flex items-center gap-1.5 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
-                <span className="text-sm font-bold">{post.comments.length}</span>
-              </button>
-
-              {/* Share Button */}
-              <button onClick={() => handleShare(post.author, post.id)} className="flex items-center gap-1.5 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors ml-auto">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" /></svg>
-              </button>
-            </div>
-
-            {/* Inline Comments Section */}
-            {activeCommentPost === post.id && (
-              <div className="mt-4 pt-4 border-t border-zinc-100 dark:border-zinc-800/50 animate-fade-in">
-                {post.comments.length > 0 ? (
-                  <div className="space-y-3 mb-4">
-                    {post.comments.map(c => (
-                      <div key={c.id} className="flex gap-2 text-sm">
-                        <Link to={`/u/${c.author}`} className="font-bold shrink-0 hover:underline">{c.author}</Link>
-                        <span className="text-zinc-700 dark:text-zinc-300 break-words">{censorMessage(c.text)}</span>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-sm text-zinc-500 mb-4">No comments yet. Be the first!</p>
-                )}
-                
-                <div className="flex gap-2">
-                  <input 
-                    type="text" 
-                    value={commentText}
-                    onChange={(e) => setCommentText(e.target.value)}
-                    placeholder="Add a comment..."
-                    className="flex-1 bg-zinc-100 dark:bg-zinc-900 rounded-full px-4 py-2 text-sm outline-none"
+      {/* Main Feed Content Area */}
+      <main className="w-full max-w-2xl mx-auto relative">
+        
+        {/* Initial Loading State */}
+        {status === 'pending' ? (
+          <div className="space-y-4">
+            <ConfessionCardSkeleton />
+            <ConfessionCardSkeleton />
+            <ConfessionCardSkeleton />
+          </div>
+        ) : flatData.length === 0 ? (
+          <EmptyFeedState filter={activeSort} />
+        ) : (
+          /* Virtualized List Container */
+          <div ref={parentRef} className="relative w-full" style={{ height: `${virtualizer.getTotalSize()}px` }}>
+            {virtualizer.getVirtualItems().map((virtualItem: VirtualItem) => {
+              const confession = flatData[virtualItem.index];
+              return (
+                <div
+                  key={virtualItem.key}
+                  data-index={virtualItem.index}
+                  ref={virtualizer.measureElement}
+                  className="absolute top-0 left-0 w-full"
+                  style={{
+                    transform: `translateY(${virtualItem.start}px)`,
+                  }}
+                >
+                  <ConfessionCard
+                    confession={confession}
+                    currentUserId={currentUserId}
+                    onHideSuccess={handleHideConfession}
+                    onDeleteSuccess={handleDeleteConfession}
                   />
-                  <button className="text-primary font-bold px-3 text-sm" disabled={!commentText.trim()}>Post</button>
+                  
+                  {/* Future Ready Sponsored Area Placeholder - Injected dynamically every ~10 posts */}
+                  {virtualItem.index > 0 && virtualItem.index % 10 === 0 && (
+                    <div className="w-full bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/10 dark:to-indigo-900/10 rounded-2xl p-4 mb-4 border border-blue-100 dark:border-blue-800/30 flex items-center justify-between">
+                      <div className="flex flex-col">
+                        <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider mb-1">Sponsored</span>
+                        <h4 className="text-gray-900 dark:text-white font-medium text-sm sm:text-base">Join the ultimate developer community today.</h4>
+                      </div>
+                      <button className="text-sm font-semibold px-4 py-2 bg-white dark:bg-gray-800 text-indigo-600 dark:text-indigo-400 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700">
+                        Learn More
+                      </button>
+                    </div>
+                  )}
                 </div>
-              </div>
-            )}
-          </article>
-        ))}
-      </div>
-      {/* Floating Action Button */}
-      <button 
-        onClick={() => setIsModalOpen(true)}
-        className="fixed bottom-20 right-4 w-14 h-14 bg-primary hover:opacity-90 text-white rounded-full shadow-lg flex items-center justify-center transition-all z-40"
-      >
-        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-        </svg>
-      </button>
+              );
+            })}
+          </div>
+        )}
 
-      {/* Confession Creation Modal */}
-      <NewConfessionModal 
-        isOpen={isModalOpen} 
-        onClose={() => setIsModalOpen(false)} 
-        onSuccess={handleConfessionSuccess}
-      />    </div>
+        {/* Infinite Scroll Trigger & Loader */}
+        <div ref={loadMoreRef} className="w-full py-8 flex justify-center items-center h-24">
+          {isFetchingNextPage ? (
+            <div className="flex flex-col items-center space-y-3">
+              <div className="w-8 h-8 border-3 border-indigo-200 border-t-indigo-600 rounded-full animate-spin dark:border-indigo-900 dark:border-t-indigo-400" />
+              <span className="text-sm text-gray-500 font-medium">Loading more secrets...</span>
+            </div>
+          ) : hasNextPage ? (
+            <span className="text-sm text-transparent">Scroll for more</span> // Hidden text to keep DOM height consistent
+          ) : flatData.length > 0 ? (
+            <div className="text-center py-6">
+              <p className="text-gray-400 dark:text-gray-500 text-sm font-medium">You've reached the bottom of the void.</p>
+            </div>
+          ) : null}
+        </div>
+
+      </main>
+    </div>
   );
-}
+};
+
+export default Feed;

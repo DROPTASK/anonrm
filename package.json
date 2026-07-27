@@ -9,11 +9,20 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "@hookform/resolvers": "^5.5.7",
     "@supabase/supabase-js": "^2.110.8",
+    "@tanstack/react-query": "^5.101.4",
+    "@tanstack/react-query-devtools": "^5.101.4",
+    "@tanstack/react-virtual": "^3.14.8",
+    "framer-motion": "^12.42.2",
     "html2canvas": "^1.4.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^7.18.1"
+    "react-hook-form": "^7.83.0",
+    "react-hot-toast": "^2.6.0",
+    "react-intersection-observer": "^10.1.0",
+    "react-router-dom": "^7.18.1",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",

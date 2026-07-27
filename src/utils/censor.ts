@@ -1,23 +1,55 @@
-// src/utils/censor.ts
+/**
+ * @file src/utils/censor.ts
+ * @description Utility for detecting and censoring profanity or NSFW content.
+ * Uses regex boundaries to prevent the Scunthorpe problem (e.g., blocking "class").
+ */
 
-// In production, fetch this array from your Supabase 'blocked_words' table on app load
-const BLOCKED_WORDS = ["fuck", "shit", "bitch", "asshole", "damn"]; 
+// A simplified list for demonstration. In a real app, use a comprehensive dictionary or external API.
+const BANNED_WORDS = [
+  'fuck', 'shit', 'bitch', 'asshole', 'cunt', 'dick', 'pussy', 'slut', 'whore',
+  'faggot', 'nigger', 'spic', 'chink', 'twat', 'wanker', 'bastard'
+];
 
-export const censorMessage = (text: string): string => {
-  if (!text) return "";
+/**
+ * Escapes regex characters in a string
+ */
+const escapeRegExp = (string: string): string => {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+};
+
+/**
+ * Builds a dynamic regex pattern from the banned words list
+ */
+const buildCensorRegex = (): RegExp => {
+  const pattern = BANNED_WORDS.map(escapeRegExp).join('|');
+  // \b ensures we only match whole words
+  return new RegExp(`\\b(${pattern})\\b`, 'gi');
+};
+
+const CENSOR_REGEX = buildCensorRegex();
+
+/**
+ * Replaces banned words with asterisks of the same length.
+ * @param text The input string to censor.
+ * @returns The censored string.
+ */
+export const censorText = (text: string): string => {
+  if (!text) return text;
   
-  let censoredText = text;
-  
-  BLOCKED_WORDS.forEach(word => {
-    const regex = new RegExp(`\\b${word}\\b`, 'gi');
-    censoredText = censoredText.replace(regex, (match) => {
-      // Censor 2nd, 4th, 6th, etc. letters (index 1, 3, 5)
-      return match.split('').map((char, index) => {
-        // Index is 0-based. So 1 is 2nd letter, 3 is 4th letter.
-        return (index % 2 !== 0) ? '*' : char;
-      }).join('');
-    });
+  return text.replace(CENSOR_REGEX, (match) => {
+    return '*'.repeat(match.length);
   });
+};
 
-  return censoredText;
+/**
+ * Checks if a string contains banned words.
+ * @param text The input string to check.
+ * @returns boolean indicating if profanity was found.
+ */
+export const containsProfanity = (text: string): boolean => {
+  if (!text) return false;
+  
+  // Reset regex state before testing
+  CENSOR_REGEX.lastIndex = 0;
+  return CENSOR_REGEX.test(text);
 };

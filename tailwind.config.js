@@ -4,23 +4,26 @@ export default {
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
-  // Using 'class' allows us to manually toggle dark mode later if you want
+  // 'class' mode allows our Sidebar theme toggle to control dark mode manually
   darkMode: 'class', 
   theme: {
     extend: {
       fontFamily: {
-        sans: ['Inter', 'system-ui', 'sans-serif'],
-      },
-      colors: {
-        // A bold, vibrant blue for primary actions (Share, Send, Login)
-        primary: '#2563eb', 
-        primaryHover: '#1d4ed8',
-        background: '#09090b', // Deep minimalist black for dark mode
-        surface: '#18181b',    // Slightly lighter black for cards
+        // A modern, clean font stack focusing on readability for a text-heavy app
+        sans: [
+          'Inter',
+          '-apple-system',
+          'BlinkMacSystemFont',
+          '"Segoe UI"',
+          'Roboto',
+          '"Helvetica Neue"',
+          'Arial',
+          'sans-serif',
+        ],
       },
       animation: {
-        'fade-in': 'fadeIn 0.3s ease-out forwards',
-        'slide-up': 'slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+        'fade-in': 'fadeIn 0.2s ease-out',
+        'slide-up': 'slideUp 0.3s ease-out',
       },
       keyframes: {
         fadeIn: {
@@ -28,9 +31,9 @@ export default {
           '100%': { opacity: '1' },
         },
         slideUp: {
-          '0%': { opacity: '0', transform: 'translateY(20px)' },
-          '100%': { opacity: '1', transform: 'translateY(0)' },
-        }
+          '0%': { transform: 'translateY(10px)', opacity: '0' },
+          '100%': { transform: 'translateY(0)', opacity: '1' },
+        },
       }
     },
   },
